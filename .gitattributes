@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.json text eol=lf
+*.safetensors binary
+*.ckpt binary
+*.pth binary
+*.th binary

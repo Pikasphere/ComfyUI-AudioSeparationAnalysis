@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.DS_Store
+Thumbs.db
+
+# model weights and generated audio must never be committed
+*.safetensors
+*.ckpt
+*.pth
+*.th
+*.onnx
+*.wav
+*.flac
+*.mp3
+*.mid
+output/
+temp/
+logs/

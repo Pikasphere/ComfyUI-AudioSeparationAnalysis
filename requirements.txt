@@ -1,0 +1,2 @@
+# ComfyUI ships torch/torchaudio already; pymss is the only extra dependency.
+pymss>=2.1.9

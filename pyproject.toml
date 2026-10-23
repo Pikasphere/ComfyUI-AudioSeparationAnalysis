@@ -1,0 +1,22 @@
+[project]
+name = "audio-separation-analysis"
+version = "0.1.0"
+description = "Atomic ComfyUI nodes for MSS audio separation (Demucs, BS/Mel-Band RoFormer, MDX23C, VR/UVR5, SCNet) with SheetSage2 scoring and MIDI export"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = ["pymss>=2.1.9"]
+keywords = ["comfyui", "audio", "separation", "demucs", "roformer", "uvr5", "midi"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Multimedia :: Sound/Audio :: Analysis",
+]
+
+[project.urls]
+Repository = "https://github.com/pikasphere/ComfyUI-AudioSeparationAnalysis"  # TODO: set your GitHub user
+
+# Metadata for publishing to the ComfyUI Registry (https://registry.comfy.org).
+[tool.comfy]
+PublisherId = "pikasphere"  # TODO: set your GitHub/registry user id
+DisplayName = "AudioSeparationAnalysis (ASA)"
+Icon = ""
