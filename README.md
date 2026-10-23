@@ -5,9 +5,9 @@ English: [README.en.md](README.en.md)
 音频分离与分析节点：**任意 MSS 模型分离 → 按名字取轨 → SheetSage2 扒谱 → 导出 MIDI**。
 节点保持原子化：一个节点只做一件事，批处理和文件夹交给 ComfyUI 自己的 list/batch 机制。
 
-在 **AMD RX 9070 GRE / ROCm 7.14 / torch 2.12.0** 上实测可用（下表所有数字都在这张卡上跑出来）。
-名字里不写 AMD，但分离走 `pymss`（MSS 模型库）、扒谱走 ComfyUI 自带的 SheetSage2，两边都只依赖
-`torch.cuda`（ROCm 下就是 HIP），没有 NVIDIA 专属代码路径。
+在 **AMD RX 9070 GRE / ROCm 7.14 / torch 2.12.0** 和 **NVIDIA RTX 5060 Ti 16 GiB / CUDA 13.0 / torch 2.9.1** 上实测可用，
+纯 CPU 也能跑（只是慢）。分离走 `pymss`（MSS 模型库）、扒谱走 ComfyUI 自带的 SheetSage2，
+两边都只依赖 `torch.cuda`（ROCm 下就是 HIP，NVIDIA 下就是普通 CUDA），没有厂商专属代码路径。
 
 ## 节点
 
@@ -70,7 +70,9 @@ karaoke、去混响/去噪/音频修复、单件乐器，以及男女人声、�
 - 降噪/去和声混响：`vr/vr_denoise · UVR-DeNoise-Lite.pth`、`vr/vr_deecho_dereverb · UVR-DeEcho-DeReverb.pth`、
   `mel_band_roformer/dereverb_deecho`（一次去掉混响+回声）、`mel_band_roformer/noise_bleed_control`（去串音）。
 
-## AMD 实测（RX 9070 GRE 12 GiB，20 s 音频）
+## 实测
+
+### AMD RX 9070 GRE 12 GiB / ROCm 7.14 / torch 2.12.0
 
 | 模型 | 轨数 | 加载 | 首次 | 热态 | 峰值显存 | 输出轨名 |
 |---|---|---|---|---|---|---|
@@ -83,6 +85,68 @@ karaoke、去混响/去噪/音频修复、单件乐器，以及男女人声、�
 
 注意"首次"之后还有一段：模型**下载**时间不算在上表里（BS-Roformer-SW 667 MB，ModelScope 约 6.6 MB/s）。
 第一次用某个模型时会联网拉权重，UI 里会看到 `pymss` 的下载进度条。
+
+### NVIDIA RTX 5060 Ti 16 GiB / CUDA 13.0 / torch 2.9.1
+
+同一类需求的 Blackwell 卡（驱动 596.36，compute capability **12.0 / sm_120**），`torch 2.9.1+cu130`，
+`torch.cuda.is_available() = True`，bf16 matmul 正常。兼容性结论：
+
+- 6 个模型全部加载成功，轨名与 AMD 那张表逐个一致，没有为 sm_120 加任何分支；
+- 峰值显存最高 **5.95 GiB**（`UVR-DeEcho-DeReverb.pth`），其余 ≤ 2.6 GiB —— 16 GiB 同时留着图像模型也够；
+- `engine.separate` 这条真实链路（重采样 → 分离 → `(channels, samples)` 返回）在 GPU/CPU 上都给出 6 轨 × `(2, 132300)`，
+  形状、轨名、采样率一致；
+- 前置条件只有 `torch`（CUDA 13.0）和一个能装 `pymss` 的环境；`FFmpeg` 缺失只影响容器格式解码，见下文依赖一节。
+
+| 模型 | 轨数 | 加载 | 首次 | 热态 | 峰值显存 | 输出轨名 |
+|---|---|---|---|---|---|---|
+| `HTDemucs4_6stems.th` | 6 | 0.18 s | 2.05 s | 1.04 s | 1.36 GiB | drums/bass/other/vocals/guitar/piano |
+| `UVR-DeNoise-Lite.pth` | 2 | 0.25 s | 1.64 s | 0.17 s | 2.31 GiB | Noise / No Noise |
+| `UVR-DeEcho-DeReverb.pth` | 2 | 0.34 s | 12.47 s | 0.58 s | 5.95 GiB | No Reverb / Reverb |
+| `dereverb-echo_mel_band_roformer_sdr_10.0169.ckpt` | 2 | 0.51 s | 1.37 s | 0.38 s | 2.57 GiB | dry / No dry |
+| `BS-Roformer-SW.ckpt` | 6 | 0.54 s | 0.68 s | 0.55 s | 1.65 GiB | bass/drums/other/vocals/guitar/piano |
+| `BS-Roformer-Resurrection-Inst.ckpt` | 2 | 0.18 s | 0.90 s | 0.80 s | 2.20 GiB | other / vocals |
+
+"首次"包含 cudnn 自动调优和 STFT 计划，所以 `UVR-DeEcho-DeReverb` 首次 12.5 s、热态只有 0.58 s；
+再跑一次热态差值在 2% 以内，说明这个数就是稳定值。
+
+### 纯 CPU（同机 28 逻辑核，torch 默认 20 线程）
+
+| 模型 | 轨数 | 加载 | 首次 | 热态 | 峰值内存 | 输出轨名 |
+|---|---|---|---|---|---|---|
+| `HTDemucs4_6stems.th` | 6 | 0.17 s | 12.41 s | 11.56 s | 2.00 GiB | drums/bass/other/vocals/guitar/piano |
+| `UVR-DeNoise-Lite.pth` | 2 | 0.09 s | 2.44 s | 0.95 s | 2.52 GiB | Noise / No Noise |
+| `UVR-DeEcho-DeReverb.pth` | 2 | 0.25 s | 6.21 s | 5.84 s | 3.87 GiB | No Reverb / Reverb |
+| `dereverb-echo_mel_band_roformer_sdr_10.0169.ckpt` | 2 | 0.11 s | 13.03 s | 12.74 s | 5.42 GiB | dry / No dry |
+| `BS-Roformer-SW.ckpt` | 6 | 0.19 s | 20.03 s | 19.85 s | 5.20 GiB | bass/drums/other/vocals/guitar/piano |
+| `BS-Roformer-Resurrection-Inst.ckpt` | 2 | 0.09 s | 28.47 s | 28.74 s | 6.16 GiB | other / vocals |
+
+峰值内存是进程工作集（含权重），20 s 音频没碰到内存不足。CPU 上"首次"和"热态"几乎一样，
+因为没有 cudnn 调优那一步 —— 慢是真的慢，不是预热没做完。
+
+### GPU 与 CPU 对比（热态，同一段 20 s 音频）
+
+| 模型 | GPU | CPU | GPU 快 | 显存 / 内存 |
+|---|---|---|---|---|
+| `HTDemucs4_6stems.th` | 1.04 s | 11.56 s | 11× | 1.36 / 2.00 GiB |
+| `UVR-DeNoise-Lite.pth` | 0.17 s | 0.95 s | 5.6× | 2.31 / 2.52 GiB |
+| `UVR-DeEcho-DeReverb.pth` | 0.58 s | 5.84 s | 10× | 5.95 / 3.87 GiB |
+| `dereverb-echo_mel_band_roformer_sdr_10.0169.ckpt` | 0.38 s | 12.74 s | 34× | 2.57 / 5.42 GiB |
+| `BS-Roformer-SW.ckpt` | 0.55 s | 19.85 s | 36× | 1.65 / 5.20 GiB |
+| `BS-Roformer-Resurrection-Inst.ckpt` | 0.80 s | 28.74 s | 36× | 2.20 / 6.16 GiB |
+
+- 越重的模型 GPU 赚得越多：UVR 那套是 STFT + 卷积，并行度低，只有 5~10×；RoFormer 系列是堆叠 attention block，30 倍以上。
+- CPU 上 20 s 音频最慢 29 s，一首 3 分钟的歌按线性外推大约 4 分钟；同样一首在 GPU 上约 7 s。
+- 与上面 AMD 那张表比，5060 Ti 的热态普遍更快（`BS-Roformer-SW` 0.55 s vs 2.9 s，`HTDemucs4_6stems` 1.04 s vs 1.6 s），
+  但两次测的音频不同（AMD 那次是真实歌曲，这边是固定种子的合成片段），只能当量级参考，不是严格跑分。
+
+### 复现
+
+```bash
+python custom_nodes/ComfyUI-AudioSeparationAnalysis/bench.py cuda   # 或 cpu；后面可再跟模型名追加
+```
+
+脚本先下载缺失权重，再用固定种子的 20 s 立体声片段（`%TEMP%\asa_bench\bench_20s.wav`）计时，
+结果写到 `%TEMP%\asa_bench\results_cuda.json` 和 `results_cpu.json`；`BENCH_WARM=1` 只跑一次热态（CPU 上省时间）。
 
 ## 依赖
 

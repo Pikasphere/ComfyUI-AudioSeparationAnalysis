@@ -5,8 +5,9 @@ Atomic audio separation and analysis nodes for ComfyUI: **any MSS model → pick
 One node does one thing. Folders and batching are left to ComfyUI's own list/batch
 machinery instead of a single do-everything node.
 
-Verified on **AMD RX 9070 GRE / ROCm 7.14 / torch 2.12.0** (see the benchmark table).
-The code only relies on `torch.cuda`, which is HIP under ROCm, so it also runs on NVIDIA.
+Verified on **AMD RX 9070 GRE / ROCm 7.14 / torch 2.12.0** and on **NVIDIA RTX 5060 Ti 16 GiB / CUDA 13.0 / torch 2.9.1**;
+CPU-only works too, just slower. The code only relies on `torch.cuda`, which is HIP under ROCm and plain CUDA
+under NVIDIA, so there is no vendor-specific path.
 
 中文（默认）：[README.md](README.md)
 
@@ -93,7 +94,9 @@ python custom_nodes/ComfyUI-AudioSeparationAnalysis/cli.py \
   --stems vocals,other --source huggingface
 ```
 
-## Benchmark (RX 9070 GRE 12 GiB, 20 s audio, warm, download excluded)
+## Benchmark
+
+### RX 9070 GRE 12 GiB / ROCm 7.14 (20 s audio, download excluded)
 
 | Model | Stems | Load | First | Warm | Peak VRAM | Stem names |
 |---|---|---|---|---|---|---|
@@ -106,6 +109,53 @@ python custom_nodes/ComfyUI-AudioSeparationAnalysis/cli.py \
 
 Full chain on a 3:14 song (BS-Roformer-SW, vocals only): separation 9.8 s / 1.82 GiB peak,
 SheetSage2 transcription 47 s, MIDI 6.5 KB (584 notes, 158 markers).
+
+### RTX 5060 Ti 16 GiB / CUDA 13.0 / torch 2.9.1 (same 20 s clip)
+
+Blackwell, compute capability **12.0 / sm_120**, driver 596.36, `torch 2.9.1+cu130`, bf16 matmul fine.
+All six models load and return the same stem names as the ROCm table; peak VRAM tops out at **5.95 GiB**
+(`UVR-DeEcho-DeReverb.pth`), the rest ≤ 2.6 GiB, so a 16 GiB card keeps room for image models.
+The `engine.separate` path (resample → separate → `(channels, samples)`) returns 6 × `(2, 132300)` on both
+devices. "First" includes cuDNN autotuning and the STFT plan, hence the 12.5 s → 0.58 s drop for DeEcho-DeReverb.
+
+| Model | Stems | Load | First | Warm | Peak VRAM | Stem names |
+|---|---|---|---|---|---|---|
+| `HTDemucs4_6stems.th` | 6 | 0.18 s | 2.05 s | 1.04 s | 1.36 GiB | drums/bass/other/vocals/guitar/piano |
+| `UVR-DeNoise-Lite.pth` | 2 | 0.25 s | 1.64 s | 0.17 s | 2.31 GiB | Noise / No Noise |
+| `UVR-DeEcho-DeReverb.pth` | 2 | 0.34 s | 12.47 s | 0.58 s | 5.95 GiB | No Reverb / Reverb |
+| `dereverb-echo_mel_band_roformer_sdr_10.0169.ckpt` | 2 | 0.51 s | 1.37 s | 0.38 s | 2.57 GiB | dry / No dry |
+| `BS-Roformer-SW.ckpt` | 6 | 0.54 s | 0.68 s | 0.55 s | 1.65 GiB | bass/drums/other/vocals/guitar/piano |
+| `BS-Roformer-Resurrection-Inst.ckpt` | 2 | 0.18 s | 0.90 s | 0.80 s | 2.20 GiB | other / vocals |
+
+### CPU only (same machine, 28 logical cores, torch default 20 threads)
+
+| Model | Stems | Load | First | Warm | Peak RSS | Stem names |
+|---|---|---|---|---|---|---|
+| `HTDemucs4_6stems.th` | 6 | 0.17 s | 12.41 s | 11.56 s | 2.00 GiB | drums/bass/other/vocals/guitar/piano |
+| `UVR-DeNoise-Lite.pth` | 2 | 0.09 s | 2.44 s | 0.95 s | 2.52 GiB | Noise / No Noise |
+| `UVR-DeEcho-DeReverb.pth` | 2 | 0.25 s | 6.21 s | 5.84 s | 3.87 GiB | No Reverb / Reverb |
+| `dereverb-echo_mel_band_roformer_sdr_10.0169.ckpt` | 2 | 0.11 s | 13.03 s | 12.74 s | 5.42 GiB | dry / No dry |
+| `BS-Roformer-SW.ckpt` | 6 | 0.19 s | 20.03 s | 19.85 s | 5.20 GiB | bass/drums/other/vocals/guitar/piano |
+| `BS-Roformer-Resurrection-Inst.ckpt` | 2 | 0.09 s | 28.47 s | 28.74 s | 6.16 GiB | other / vocals |
+
+### GPU vs CPU (warm)
+
+| Model | GPU | CPU | GPU speedup |
+|---|---|---|---|
+| `HTDemucs4_6stems.th` | 1.04 s | 11.56 s | 11× |
+| `UVR-DeNoise-Lite.pth` | 0.17 s | 0.95 s | 5.6× |
+| `UVR-DeEcho-DeReverb.pth` | 0.58 s | 5.84 s | 10× |
+| `dereverb-echo_mel_band_roformer_sdr_10.0169.ckpt` | 0.38 s | 12.74 s | 34× |
+| `BS-Roformer-SW.ckpt` | 0.55 s | 19.85 s | 36× |
+| `BS-Roformer-Resurrection-Inst.ckpt` | 0.80 s | 28.74 s | 36× |
+
+The STFT/conv UVR models only gain 5–10×; the attention-stacked RoFormer models gain 30×+. On CPU the
+slowest entry needs 29 s for 20 s of audio, so folder work really wants the GPU. The ROCm numbers above
+were measured on a real song rather than this synthetic clip, so cross-column comparison is order-of-magnitude only.
+
+Reproduce with `python custom_nodes/ComfyUI-AudioSeparationAnalysis/bench.py cuda` (or `cpu`); it writes
+`results_<device>.json` and the deterministic 20 s clip to `%TEMP%\asa_bench\`. `BENCH_WARM=1` skips the
+second warm run (useful on CPU).
 
 ## SheetSage2 weights (for the scoring node)
 
