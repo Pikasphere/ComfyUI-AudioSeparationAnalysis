@@ -1,138 +1,114 @@
 # ComfyUI-AudioSeparationAnalysis (ASA)
 
-Atomic audio separation and analysis nodes for ComfyUI: **any MSS model → pick a stem → SheetSage2 score → MIDI**.
+English: [README.en.md](README.en.md)
 
-One node does one thing. Folders and batching are left to ComfyUI's own list/batch
-machinery instead of a single do-everything node.
+音频分离与分析节点：**任意 MSS 模型分离 → 按名字取轨 → SheetSage2 扒谱 → 导出 MIDI**。
+节点保持原子化：一个节点只做一件事，批处理和文件夹交给 ComfyUI 自己的 list/batch 机制。
 
-Verified on **AMD RX 9070 GRE / ROCm 7.14 / torch 2.12.0** (see the benchmark table).
-The code only relies on `torch.cuda`, which is HIP under ROCm, so it also runs on NVIDIA.
+在 **AMD RX 9070 GRE / ROCm 7.14 / torch 2.12.0** 上实测可用（下表所有数字都在这张卡上跑出来）。
+名字里不写 AMD，但分离走 `pymss`（MSS 模型库）、扒谱走 ComfyUI 自带的 SheetSage2，两边都只依赖
+`torch.cuda`（ROCm 下就是 HIP），没有 NVIDIA 专属代码路径。
 
-中文文档：[README.zh.md](README.zh.md)
+## 节点
 
-## Nodes
-
-| Node | In → Out | Notes |
+| 节点 | 输入 → 输出 | 说明 |
 |---|---|---|
-| `ASA Load Audio` | path, sample_rate, mono, offset, duration → AUDIO, info | Decodes anything pymss/av can read (`.aac`, `.flv`, `.mkv`, …) that core `LoadAudio` cannot; relative paths resolve under ComfyUI `input/` |
-| `ASA Separate (MSS)` | audio, model, device, source, only_stems, use_tta, batch_size → stems, names, bundle, sample_rate | **No fixed stem count**: 1/2/4/6/8/53-track models, denoise, dereverb all use this node |
-| `ASA Stem Select` | bundle, stem → audio, name | Pick by name (case-insensitive substring) or 1-based index |
-| `ASA SheetSage2 to ABC` | audio, model_name, mode → abc | Transcription only; the ABC text is also shown in the UI |
-| `ASA ABC to MIDI` | abc, filename_prefix, save → saved_midi, bytes | Standard MIDI File: format 1, 480 ppq, tempo/meter/chord/section markers |
-| `ASA Model Info` | model → info | Architecture, category, expected stems, size |
-| `ASA Convert Model` | sheetsage2_dir, base_model_dir, output_name, dtype → status | Merge the SheetSage2 adapter with MERT-v2 into a ComfyUI audio encoder file |
+| `ASA Load Audio` | path、sample_rate、mono、offset、duration → AUDIO、info | 走 pymss/av 解码，`.aac/.flv/.mkv` 这类核心 `LoadAudio` 吃不下的格式也能进；相对路径按 ComfyUI `input/` 解析 |
+| `ASA Separate (MSS)` | audio、model、device、source、only_stems、use_tta、batch_size → stems、names、bundle、sample_rate | **不写死轨数**：1/2/4/6/8 轨、降噪、去混响、去和声都走这一个节点 |
+| `ASA Stem Select` | bundle、stem → audio、name | 按名字（大小写不敏感，支持子串）或 1 起序号取轨 |
+| `ASA SheetSage2 to ABC` | audio、model_name、mode → abc | 只出 ABC 文本，存盘不归它管 |
+| `ASA ABC to MIDI` | abc、filename_prefix、save → saved_midi、bytes | 写成 Standard MIDI File（format 1、480 tick/拍，含 tempo/拍号/和弦与段落 marker） |
+| `ASA Model Info` | model → info | 查模型架构、类别、预期轨名、体积 |
+| `ASA Convert Model` | sheetsage2_dir、base_model_dir、output_name、dtype → status | 把 HF adapter + MERT-v2 合并成 ComfyUI 的音频编码器文件 |
 
-`stems` is an `AUDIO` list (native batching, feed it to `SaveAudio`), `names` are the same
-stem names as strings, and `bundle` is the dictionary `ASA Stem Select` consumes — a bundle
-is required because two parallel list outputs would be zipped per item by ComfyUI, making
-"pick one stem by name" impossible.
+`stems` 是 `AUDIO` 列表（原生 batching，可直接喂 `SaveAudio` 一起存），`bundle` 是给 `ASA Stem Select`
+用的字典；`names` 是同一批轨名的字符串列表。
 
-Typical graph:
+典型链路：
 
 ```
 ASA Load Audio → ASA Separate (MSS) → ASA Stem Select("vocals") → ASA SheetSage2 to ABC → ASA ABC to MIDI
-                     └→ stems ─→ SaveAudio ×N
+                     └→ stems ─→ SaveAudio ×N（存四轨/六轨 wav）
 ```
 
-Example workflow: [example_workflows/ASA 音频分离与扒谱.json](example_workflows/ASA%20音频分离与扒谱.json)
+![ASA 示例链路](docs/example-chain.svg)
 
-![ASA example chain](docs/example-chain.svg)
-
-## Install
-
-```bash
-cd ComfyUI/custom_nodes
-git clone <this repo> ComfyUI-AudioSeparationAnalysis
-../.venv/Scripts/python.exe -m pip install pymss     # Linux: ../venv/bin/python -m pip install pymss
-```
-
-`pymss` (which pulls `pymss-core`) is **not** a ComfyUI dependency, so it has to be
-installed into the same environment ComfyUI runs in. Restart ComfyUI afterwards.
-
-## Models
-
-Model weights are downloaded **from Hugging Face** by default (`source = huggingface`).
-The `source` input also accepts `modelscope` (fast inside mainland China) and `hf-mirror`.
-
-- Catalog: 326 usable entries from the `pymss` MSS model zoo, exposed in one searchable
-  `model` combo as `architecture/category · name`.
-- Cache: `~/.cache/pymss/models/<category>/<task>/<file>`; move it with `PYMSS_MODEL_DIR`
-  or `model_dir=`.
-- The first run of a model downloads its weights; the progress bar is pymss' own.
-  Download time is not inference time — a 667 MB model takes ~2 min to fetch and ~2 s to
-  load from disk afterwards.
-- **Custom / 8-track models**: the catalog has no registered 8-stem model (it does have
-  6-stem and a 53-stem one). Register your own checkpoint and it appears in the combo
-  tagged `(user)`:
-
-  ```bash
-  pymss register --name my_8stems --model /path/8stems.ckpt --config /path/8stems.yaml
-  ```
-
-  `ASA Separate` never assumes a track count, so all eight stems (and their names) pass
-  straight through.
-
-### Coverage
-
-| Need | Models |
-|---|---|
-| 6 stems, fast and stable | `htdemucs/six_stem · HTDemucs4_6stems.th` |
-| 6 stems, best quality | `bs_roformer/six_stem · BS-Roformer-SW.ckpt`, `logic_bs_roformer.ckpt` |
-| 2 stems (vocals/instrumental) | `bs_roformer/vocal_instrumental_dual`, `mel_band_roformer/vocal_instrumental_dual` |
-| UVR5 denoise | `vr/vr_denoise · UVR-DeNoise-Lite.pth` |
-| UVR5 dereverb / de-echo / de-bleed | `vr/vr_dereverb`, `vr/vr_deecho`, `vr/vr_deecho_dereverb`, `mel_band_roformer/dereverb_deecho`, `noise_bleed_control` |
-| 4 stems | `htdemucs/four_stem · HTDemucs4.th`, `scnet/four_stem`, `mdx23c` |
-| 6 drum parts | `mdx23c/drum_stems` |
-
-## CLI (folder batch, no queue)
+文件夹批处理不在节点里，用命令行（不占队列）：
 
 ```bash
 python custom_nodes/ComfyUI-AudioSeparationAnalysis/cli.py \
-  --folder /music --out output/asa \
-  --model "htdemucs/six_stem · HTDemucs4_6stems.th" \
-  --stems vocals,other --source huggingface
+  --folder E:/JiJiDown/Download --out output/asa \
+  --model "htdemucs/six_stem · HTDemucs4_6stems.th" --stems vocals,other --limit 1
 ```
 
-## Benchmark (RX 9070 GRE 12 GiB, 20 s audio, warm, download excluded)
+## 模型覆盖（pymss 目录，326 个可用条目）
 
-| Model | Stems | Load | First | Warm | Peak VRAM | Stem names |
+| 族 | 条目数 | 常见轨数 | 用途 |
+|---|---|---|---|
+| `mel_band_roformer` | 143 | 2 / 4 | 人声/伴奏、去混响(9)、去回声(3)、去串音(8)、四轨(13) |
+| `bs_roformer` | 93 | 2 / 4 / 6 / 53 | 高质量人声、6 轨、53 轨细分、鼓/弦乐/人声性别 |
+| `vr`（VR arch = UVR5） | 29 | 2 | UVR5 经典分离：`vr_denoise`、`vr_dereverb`、`vr_deecho`、`vr_deecho_dereverb`、`vr_karaoke`、`vr_mgm` 等 |
+| `htdemucs` | 8 | 4 / 6 | 快、稳：`HTDemucs4.th`（4 轨）、`HTDemucs4_6stems.th`（6 轨） |
+| `scnet` | 13 | 4 | 轻量四轨、合唱四部、鼓/贝斯/钢琴 |
+| `mdx23c` | 7 | 2 / 6 | 人声/伴奏、鼓六件、去混响 |
+| `bandit` / `apollo` / `tasnet` / `legacy` | 23 | 2 / 3 / 4 | 语音/音乐/音效、音频修复、老模型 |
+
+关于轨数：
+
+- **6 轨**：`bs_roformer/six_stem · BS-Roformer-SW.ckpt`、`htdemucs/six_stem · HTDemucs4_6stems.th`、
+  `bs_roformer/six_stem · logic_bs_roformer.ckpt`（轨名 drums/bass/other/vocals/guitar/piano）。
+- **2 轨**：`bs_roformer/vocal_instrumental_dual`、`vr/vr_vocal_extraction`、`mel_band_roformer/vocal_instrumental_dual` 等。
+- **8 轨**：pymss 目录里**没有**注册的 8 轨模型，所以节点不假设轨数——`ASA Separate` 直接返回模型给多少轨就是多少轨。
+  自备 8 轨 checkpoint 时用 pymss 的 `pymss register`（或 `pymss.model_registry.register_model`）注册成用户模型，
+  它会出现在 `model` 下拉里（标签带 `(user)`），8 个轨名原样透出。`mega_53_stems` 那种 53 轨模型同理。
+- 降噪/去和声混响：`vr/vr_denoise · UVR-DeNoise-Lite.pth`、`vr/vr_deecho_dereverb · UVR-DeEcho-DeReverb.pth`、
+  `mel_band_roformer/dereverb_deecho`（一次去掉混响+回声）、`mel_band_roformer/noise_bleed_control`（去串音）。
+
+## AMD 实测（RX 9070 GRE 12 GiB，20 s 音频）
+
+| 模型 | 轨数 | 加载 | 首次 | 热态 | 峰值显存 | 输出轨名 |
 |---|---|---|---|---|---|---|
 | `HTDemucs4_6stems.th` | 6 | 1.0 s | 3.6 s | 1.6 s | 0.79 GiB | drums/bass/other/vocals/guitar/piano |
 | `UVR-DeNoise-Lite.pth` | 2 | 1.0 s | 1.3 s | 0.7 s | 1.04 GiB | Noise / No Noise |
 | `UVR-DeEcho-DeReverb.pth` | 2 | 1.2 s | 5.8 s | 3.2 s | 2.74 GiB | No Reverb / Reverb |
-| `dereverb-echo_mel_band_roformer` | 2 | 1.9 s | 6.5 s | 8.1 s | 3.16 GiB | dry / No dry |
+| `dereverb-echo_mel_band_roformer_sdr_10.0169.ckpt` | 2 | 1.9 s | 6.5 s | 8.1 s | 3.16 GiB | dry / No dry |
 | `BS-Roformer-SW.ckpt` | 6 | 2.1 s | 3.3 s | 2.9 s | 2.22 GiB | bass/drums/other/vocals/guitar/piano |
 | `BS-Roformer-Resurrection-Inst.ckpt` | 2 | 1.2 s | 6.7 s | 6.2 s | 2.36 GiB | other / vocals |
 
-Full chain on a 3:14 song (BS-Roformer-SW, vocals only): separation 9.8 s / 1.82 GiB peak,
-SheetSage2 transcription 47 s, MIDI 6.5 KB (584 notes, 158 markers).
+注意"首次"之后还有一段：模型**下载**时间不算在上表里（BS-Roformer-SW 667 MB，ModelScope 约 6.6 MB/s）。
+第一次用某个模型时会联网拉权重，UI 里会看到 `pymss` 的下载进度条。
 
-## SheetSage2 weights (for the scoring node)
+## 依赖
 
-`ASA Convert Model` merges the released LoRA adapter with its MERT-v2 parent:
+```bash
+.venv\Scripts\python.exe -m pip install pymss          # 含 pymss-core，负责 MSS 模型库与分离推理
+```
 
-- `m-a-p/SheetSage2` ships only adapters (355 tensors); the parent is `m-a-p/MERT-v2-FullSong` (2.36 GiB).
-- `scale = lora_alpha / lora_rank = 2.0`, `W += (lora_B @ lora_A) * scale` on the four encoder
-  projections, plus `output_projection.weight = token_embedding.weight.clone()` (the tied
-  weight has to be materialised).
-- **bf16 caveat**: `MelFrontend` keeps `spectrogram.window`, `mel_scale.fb` and `mel_mean/mel_std`
-  as explicit float32 buffers. Rounding those to bf16 silently degrades the mel spectrogram, so
-  the transcription gets consistently worse (whole instrumental sections collapse to rests) —
-  and because it is deterministic it looks like "bf16 is just like that". `converter.py` keeps
-  them via `FP32_ONLY_PREFIXES = ("encoder.feature_extractor.",)`; with that fix bf16 and fp32
-  weights produce byte-identical `.abc`/`.mid` output while loading twice as fast.
+`pymss` **不是** ComfyUI 自带依赖，重建 venv 后要重新装。模型权重落在 `C:\Users\<user>\.cache\pymss\models\`
+（也可用 `pymss` 的 `--model-dir` / `PYMSS_MODEL_DIR` 改位置）。`FFmpeg` 未装时 pymss 会警告，
+但 `.aac/.mp3/.wav` 仍可经 av/soundfile 解码；要处理容器格式再装 FFmpeg。
 
-## Pitfalls
+扒谱还需要 `models/audio_encoders/` 下的 SheetSage2 合并权重（`sheetsage2_audio_encoder_bf16.safetensors`），
+用 `ASA Convert Model` 生成：
 
-- **pymss' roformer models cannot run inside `torch.inference_mode()`** — ComfyUI executes nodes
-  inside it (`execution.py:754`) and the group cache keys on `gamma._version`, which raises
-  `RuntimeError: Inference tensors do not track version counter`. `ASA Separate` wraps loading
-  and inference in `torch.inference_mode(False)` for this reason. Plain scripts without
-  inference mode work fine, which makes this easy to misdiagnose as "AMD is unsupported".
-- Switching models does not free the previous one by itself; `engine.load_separator` evicts and
-  empties the cache.
-- No `/manager/reboot` route in this ComfyUI build: restart the app after changing `custom_nodes`.
+- HF `m-a-p/SheetSage2` 只有 LoRA adapter，底座是 `m-a-p/MERT-v2-FullSong`；
+  `scale = lora_alpha/lora_rank = 2.0`，`W += (lora_B @ lora_A) * scale`，再补
+  `output_projection.weight = token_embedding.weight`（tied 权重必须 clone）。
+- **bf16 转换的坑**：`MelFrontend` 的 `spectrogram.window`、`mel_scale.fb`、`mel_mean/mel_std` 是模型里的
+  显式 fp32 缓冲区，转 bf16 会把梅尔谱毁掉（扒谱结果稳定变差但每次一致，很容易误判成"bf16 就这样"）。
+  `converter.py` 用 `FP32_ONLY_PREFIXES = ("encoder.feature_extractor.",)` 保住它们；修好后 bf16 与 fp32
+  输出的 `.abc`/`.mid` 逐字节相同。
 
-## License
+## 从旧包迁移
 
-MIT — see [LICENSE](LICENSE).
+旧包 `ComfyUI-AMD-Music2Score`（AMD 前缀、含一条龙的 `AMD Folder Music to ABC`）已停用为
+`custom_nodes/ComfyUI-AMD-Music2Score.disabled`。它拆成了：
+
+| 旧 | 新 |
+|---|---|
+| `AMDFolderMusicToABC` | 删掉（批处理改 `cli.py`，图内用 list/batch） |
+| `AMDDemucsStems`（固定 4 轨） | `ASA Separate (MSS)` + `ASA Stem Select` |
+| `AMDSheetSage2VocalToABC`（转写+存盘+MIDI 混在一起） | `ASA SheetSage2 to ABC` + `ASA ABC to MIDI` |
+| `AMDSheetSage2ConvertModel` | `ASA Convert Model` |
+
+旧工作流里的节点名不再存在，需要在画布里换成 ASA 节点。
