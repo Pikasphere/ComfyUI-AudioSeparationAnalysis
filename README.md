@@ -14,11 +14,11 @@ English: [README.en.md](README.en.md)
 | 节点 | 输入 → 输出 | 说明 |
 |---|---|---|
 | `ASA Load Audio` | path、sample_rate、mono、offset、duration → AUDIO、info | 走 pymss/av 解码，`.aac/.flv/.mkv` 这类核心 `LoadAudio` 吃不下的格式也能进；相对路径按 ComfyUI `input/` 解析 |
-| `ASA Separate (MSS)` | audio、model、device、source、only_stems、use_tta、batch_size → stems、names、bundle、sample_rate | **不写死轨数**：1/2/4/6/8 轨、降噪、去混响、去和声都走这一个节点 |
+| `ASA Separate (MSS)` | audio、model、device、source、only_stems、use_tta、batch_size、other_model → stems、names、bundle、sample_rate | **不写死轨数**：1/2/4/6/8 轨、降噪、去混响、去和声都走这一个节点；下拉只列推荐模型，`other_model` 填名字即可用目录里的任意模型 |
 | `ASA Stem Select` | bundle、stem → audio、name | 按名字（大小写不敏感，支持子串）或 1 起序号取轨 |
 | `ASA SheetSage2 to ABC` | audio、model_name、mode → abc | 只出 ABC 文本，存盘不归它管 |
 | `ASA ABC to MIDI` | abc、filename_prefix、save → saved_midi、bytes | 写成 Standard MIDI File（format 1、480 tick/拍，含 tempo/拍号/和弦与段落 marker） |
-| `ASA Model Info` | model → info | 查模型架构、类别、预期轨名、体积 |
+| `ASA Model Info` | model、other_model → info | 查模型架构、类别、预期轨名、体积；`other_model` 可查下拉里没有的模型 |
 | `ASA Convert Model` | sheetsage2_dir、base_model_dir、output_name、dtype → status | 把 HF adapter + MERT-v2 合并成 ComfyUI 的音频编码器文件 |
 
 `stems` 是 `AUDIO` 列表（原生 batching，可直接喂 `SaveAudio` 一起存），`bundle` 是给 `ASA Stem Select`
@@ -42,6 +42,12 @@ python custom_nodes/ComfyUI-AudioSeparationAnalysis/cli.py \
 ```
 
 ## 模型覆盖（pymss 目录，326 个可用条目）
+
+`model` 下拉只保留 `engine.RECOMMENDED` 里那 30 个：2 轨人声/伴奏的头部几个、四/六/53 轨多轨、
+karaoke、去混响/去噪/音频修复、单件乐器，以及男女人声、合唱、吸气音、语音、bleedless 这类别处没有的能力。
+其余条目不在下拉里，但仍然能用：在 `other_model` 填模型名（`MDX23C_D1581.ckpt`）或完整标签
+（`mdx23c/inst_voc · MDX23C_D1581.ckpt`）即可，`resolve_model` 两种都认。改推荐清单就改 `RECOMMENDED`；
+自己 `pymss register` 注册的模型始终会出现在下拉里，标签带 `(user)`。
 
 | 族 | 条目数 | 常见轨数 | 用途 |
 |---|---|---|---|

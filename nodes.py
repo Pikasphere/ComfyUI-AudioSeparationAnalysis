@@ -87,6 +87,10 @@ class ASASeparate:
                 "use_tta": ("BOOLEAN", {"default": False}),
                 "batch_size": ("INT", {"default": 0, "min": 0, "max": 64}),
             },
+            "optional": {
+                # Optional so prompts that already name a model keep validating.
+                "other_model": ("STRING", {"default": "", "tooltip": "留空就用上面的 model。要用下拉里没有的模型时，填 pymss 模型名或完整标签。"}),
+            },
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
 
@@ -96,19 +100,21 @@ class ASASeparate:
     FUNCTION = "run"
     CATEGORY = CATEGORY
 
-    def run(self, audio, model, device, source, only_stems, use_tta, batch_size, unique_id=None):
+    def run(self, audio, model, device, source, only_stems, use_tta, batch_size,
+            other_model="", unique_id=None):
+        chosen = (other_model or "").strip() or model
         # pymss' roformer group cache keys on ``gamma._version``, which inference
         # tensors do not track, so this must run with ComfyUI's global
         # inference_mode switched off. Weights carry requires_grad=False, so no
         # autograd graph is built and the memory profile stays the same.
         with torch.inference_mode(False):
-            separator = engine.load_separator(model, device, source, use_tta=use_tta, batch_size=batch_size)
+            separator = engine.load_separator(chosen, device, source, use_tta=use_tta, batch_size=batch_size)
             separator.progress_callback = _progress_reporter(unique_id)
 
             tracks, rate = engine.separate(audio["waveform"], audio["sample_rate"], separator,
                                            only_stems=split_stems(only_stems))
         names = list(tracks)
-        print(f"[ASA] {engine.resolve_model(model)} -> {names} @ {rate} Hz")
+        print(f"[ASA] {engine.resolve_model(chosen)} -> {names} @ {rate} Hz")
         stems = [to_audio(tracks[name], rate) for name in names]
         bundle = {"stems": tracks, "sample_rate": rate}
         return (stems, names, bundle, rate)
@@ -233,7 +239,10 @@ class ASAModelInfo:
     @classmethod
     def INPUT_TYPES(cls):
         models = engine.model_labels()
-        return {"required": {"model": (models or ["pymss catalog is empty"],)}}
+        return {
+            "required": {"model": (models or ["pymss catalog is empty"],)},
+            "optional": {"other_model": ("STRING", {"default": "", "tooltip": "留空就用上面的 model；填 pymss 模型名可查下拉里没有的模型。"})},
+        }
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("info",)
@@ -241,8 +250,8 @@ class ASAModelInfo:
     CATEGORY = CATEGORY
     OUTPUT_NODE = True
 
-    def run(self, model):
-        summary = engine.model_summary(model)
+    def run(self, model, other_model=""):
+        summary = engine.model_summary((other_model or "").strip() or model)
         text = (f"{summary['name']}\narchitecture: {summary['architecture']}\n"
                 f"category: {summary['category']}\n"
                 f"stems: {', '.join(summary['stems']) or 'defined by the model config'}\n"

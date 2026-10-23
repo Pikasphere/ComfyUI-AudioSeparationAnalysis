@@ -30,9 +30,54 @@ STEM_SEPARATOR = "/"
 _encoders = {}
 _separators = {}
 _label_index = {}
+_label_name = {}
+_labels = []
 
 
 # ---------------------------------------------------------------- model catalog
+
+# What the combo offers: the daily drivers, plus every model whose capability
+# nothing else in the catalog covers. The other ~290 entries stay usable through
+# the node's ``other_model`` field, which takes a bare name or a full label.
+RECOMMENDED = (
+    # 2 stems: vocals / instrumental
+    "model_bs_roformer_ep_317_sdr_12.9755.ckpt",
+    "model_bs_roformer_ep_368_sdr_12.9628.ckpt",
+    "bs_roformer_voc_hyperacev2.ckpt",
+    "BS-Roformer-Resurrection.ckpt",
+    "mel_band_roformer_vocals_gabox.ckpt",
+    "mel_band_roformer_vocals_fv7b_gabox.ckpt",
+    "Kim_MelBandRoformer.ckpt",
+    "melband_roformer_instvoc_duality_v1.ckpt",
+    # 4 / 6 / 53 stems
+    "mel_band_roformer_4stems_large_ver1.ckpt",
+    "HTDemucs4_6stems.th",
+    "BS-Roformer-SW.ckpt",
+    "mvsep_mega_model_bs_roformer_53_stems_v1.ckpt",
+    "MDX23C-8KFFT-InstVoc_HQ.ckpt",
+    "SCNet-large_starrytong_fixed.ckpt",
+    # karaoke
+    "mel_band_roformer_karaoke_gabox_v2.ckpt",
+    "model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
+    # dereverb / denoise / restoration
+    "dereverb_bs_roformer_anvuew_sdr_22.5050.ckpt",
+    "dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
+    "denoise_mel_band_roformer_aufr33_sdr_27.9959.ckpt",
+    "UVR-DeNoise.pth",
+    "UVR-DeEcho-DeReverb.pth",
+    "Apollo_LQ_MP3_restoration.ckpt",
+    # single instruments
+    "MDX23C-DrumSep-aufr33-jarredou.ckpt",
+    "HTDemucs4_FT_bass.th",
+    "becruily_guitar.ckpt",
+    # narrow, but nothing else in the catalog does it
+    "bs_roformer_male_female_by_aufr33_sdr_7.2889.ckpt",
+    "model_chorus_bs_roformer_ep_267_sdr_24.1275.ckpt",
+    "aspiration_mel_band_roformer_sdr_18.9845.ckpt",
+    "speech_bs_roformer_AliceN_sdr_20.4440.ckpt",
+    "UVR-BVE-4B_SN-44100-1.pth",
+)
+
 
 def _entry_stems(entry):
     """Stem names the model is expected to return, from catalog metadata."""
@@ -41,35 +86,48 @@ def _entry_stems(entry):
     return stems
 
 
-def model_labels():
-    """Searchable ``architecture/category · name`` labels for every usable model.
+def _label(entry):
+    """``architecture/category · name`` label for one catalog entry."""
+    architecture = getattr(entry, "architecture", "") or getattr(entry, "model_type", "")
+    category = getattr(entry, "secondary_category", "") or ""
+    tag = f"{architecture}/{category}" if category else architecture
+    return f"{tag} · {entry.name}"
 
-    Built once per process: the catalog is static, and the UI only needs the
-    string list for its combo box.
-    """
-    if _label_index:
-        return list(_label_index)
-    labels = []
+
+def _build_catalog():
+    """Index every catalog label once, then keep only the visible ones."""
+    user_names = {entry.name for entry in pymss.list_user_models()}
     for entry in pymss.list_models(supported=True, include_user=True):
-        architecture = getattr(entry, "architecture", "") or getattr(entry, "model_type", "")
-        category = getattr(entry, "secondary_category", "") or ""
-        tag = f"{architecture}/{category}" if category else architecture
-        label = f"{tag} · {entry.name}"
+        label = _label(entry)
         if label in _label_index:
-            label = f"{tag} · {entry.name} (user)"
+            label = f"{label} (user)"
         _label_index[label] = entry.name
-        labels.append(label)
-    labels.sort()
-    return labels
+        _label_name.setdefault(entry.name, label)
+    visible = [_label_name[name] for name in RECOMMENDED if name in _label_name]
+    visible += [_label_name[name] for name in sorted(user_names)
+                if name in _label_name and name not in RECOMMENDED]
+    _labels[:] = visible
+
+
+def model_labels():
+    """Combo options: ``RECOMMENDED`` plus the user's own registered models.
+
+    Built once per process. Hidden catalog entries remain usable through
+    :func:`resolve_model`, which accepts a bare model name as well as a label.
+    """
+    if not _label_index:
+        _build_catalog()
+    return list(_labels)
 
 
 def resolve_model(label):
     """Map a combo label (or a bare model name) to the pymss catalog name."""
+    if not _label_index:
+        _build_catalog()
     if not label:
-        models = model_labels()
-        if not models:
+        if not _labels:
             raise ValueError("the pymss model catalog is empty; install pymss to get the MSS model zoo")
-        return _label_index[models[0]]
+        return _label_index[_labels[0]]
     return _label_index.get(label, label)
 
 
