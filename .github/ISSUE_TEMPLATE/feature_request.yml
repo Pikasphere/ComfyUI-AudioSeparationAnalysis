@@ -1,0 +1,32 @@
+name: Feature request
+description: Suggest a model family, a node input, or a different default
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The node set is deliberately atomic: if a request can be built by composing
+        existing nodes, say how — that is usually the preferred answer.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the workflow or the audio task, not just the node you want.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: New input, new node, different default, extra model family?
+  - type: input
+    id: models
+    attributes:
+      label: Models involved (if any)
+      description: pymss catalog names or upstream repos, e.g. `bs_roformer/six_stem`
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What did you try already?
+      description: Existing nodes, cli.py flags, or manual steps

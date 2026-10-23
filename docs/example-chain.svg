@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="430" viewBox="0 0 1500 430" role="img" aria-label="ASA example node chain">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#5c7fa3"/>
+    </marker>
+    <marker id="arrow-dash" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4d6b52"/>
+    </marker>
+    <style>
+      .bg { fill: #0d1117; }
+      .box { fill: #161d26; stroke: #2b3947; stroke-width: 1.5; rx: 10; }
+      .box-alt { fill: #141b18; stroke: #2d4235; stroke-width: 1.5; rx: 10; }
+      .title { fill: #e6edf3; font: 600 16px 'Segoe UI', system-ui, sans-serif; }
+      .body { fill: #9db0c4; font: 12.5px 'Segoe UI', system-ui, sans-serif; }
+      .label { fill: #5c7fa3; font: 11px 'Consolas', monospace; }
+      .caption { fill: #7d8fa3; font: 12px 'Segoe UI', system-ui, sans-serif; }
+      .heading { fill: #e6edf3; font: 600 18px 'Segoe UI', system-ui, sans-serif; }
+      .link { stroke: #5c7fa3; stroke-width: 2; fill: none; }
+      .link-dash { stroke: #4d6b52; stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1500" height="430" rx="14"/>
+  <text class="heading" x="40" y="44">ComfyUI-AudioSeparationAnalysis (ASA) — example chain</text>
+  <text class="caption" x="40" y="68">six-stem model, one stem scored, MIDI out · verified on RX 9070 GRE / ROCm 7.14</text>
+
+  <!-- node 1 -->
+  <rect class="box" x="40" y="104" width="240" height="96"/>
+  <text class="title" x="58" y="134">ASA Load Audio</text>
+  <text class="body" x="58" y="158">path: *.aac / *.flv / *.mkv</text>
+  <text class="body" x="58" y="178">mono · offset · duration</text>
+
+  <!-- node 2 -->
+  <rect class="box" x="330" y="104" width="240" height="96"/>
+  <text class="title" x="348" y="134">ASA Separate (MSS)</text>
+  <text class="body" x="348" y="158">BS-Roformer-SW.ckpt</text>
+  <text class="body" x="348" y="178">source: huggingface</text>
+
+  <!-- node 3 -->
+  <rect class="box" x="620" y="104" width="240" height="96"/>
+  <text class="title" x="638" y="134">ASA Stem Select</text>
+  <text class="body" x="638" y="158">stem: vocals</text>
+  <text class="body" x="638" y="178">(name or 1-based index)</text>
+
+  <!-- node 4 -->
+  <rect class="box" x="910" y="104" width="240" height="96"/>
+  <text class="title" x="928" y="134">ASA SheetSage2 to ABC</text>
+  <text class="body" x="928" y="158">mode: full / melody</text>
+  <text class="body" x="928" y="178">ABC text shown in UI</text>
+
+  <!-- node 5 -->
+  <rect class="box" x="1200" y="104" width="240" height="96"/>
+  <text class="title" x="1218" y="134">ASA ABC to MIDI</text>
+  <text class="body" x="1218" y="158">format 1 · 480 ppq</text>
+  <text class="body" x="1218" y="178">tempo · meter · markers</text>
+
+  <!-- links -->
+  <path class="link" d="M 280 152 L 330 152" marker-end="url(#arrow)"/>
+  <text class="label" x="286" y="144">AUDIO</text>
+
+  <path class="link" d="M 570 152 L 620 152" marker-end="url(#arrow)"/>
+  <text class="label" x="572" y="144">bundle</text>
+
+  <path class="link" d="M 860 152 L 910 152" marker-end="url(#arrow)"/>
+  <text class="label" x="868" y="144">AUDIO</text>
+
+  <path class="link" d="M 1150 152 L 1200 152" marker-end="url(#arrow)"/>
+  <text class="label" x="1156" y="144">STRING</text>
+
+  <!-- stems branch -->
+  <path class="link-dash" d="M 450 200 L 450 268" marker-end="url(#arrow-dash)"/>
+  <text class="label" x="458" y="240" fill="#4d6b52">stems (AUDIO list)</text>
+  <rect class="box-alt" x="330" y="272" width="240" height="66"/>
+  <text class="title" x="348" y="300" font-size="15px">SaveAudio × N</text>
+  <text class="body" x="348" y="322">all six stems written as wav</text>
+
+  <!-- facts -->
+  <text class="caption" x="620" y="296">stems: bass / drums / other / vocals / guitar / piano</text>
+  <text class="caption" x="620" y="318">track count is never hard-coded: 2, 4, 6, 8 or 53 stems pass through</text>
+  <text class="caption" x="40" y="392">3:14 song end-to-end: separation 9.8 s (1.82 GiB peak) · transcription 47 s · MIDI 6.5 KB, 584 notes, 158 markers</text>
+  <text class="caption" x="40" y="412">ASA SheetSage2 to ABC and ASA ABC to MIDI are output nodes, so their results are visible without extra wiring.</text>
+</svg>

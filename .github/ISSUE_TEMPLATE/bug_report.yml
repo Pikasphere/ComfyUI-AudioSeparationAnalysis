@@ -1,0 +1,65 @@
+name: Bug report
+description: A node failed, produced wrong stems, or the MIDI/ABC output looks wrong
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please include the failing node and the full traceback —
+        most ASA failures are either a missing `pymss` install or a model/catalog mismatch.
+  - type: dropdown
+    id: node
+    attributes:
+      label: Which node (or entry point) failed?
+      options:
+        - ASA Load Audio
+        - ASA Separate (MSS)
+        - ASA Stem Select
+        - ASA SheetSage2 to ABC
+        - ASA ABC to MIDI
+        - ASA Model Info
+        - ASA Convert Model
+        - cli.py (folder batch)
+        - Import / ComfyUI startup
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model label from the `model` combo
+      description: Exactly as shown, e.g. `bs_roformer/six_stem · BS-Roformer-SW.ckpt`
+      placeholder: architecture/category · file
+  - type: input
+    id: source
+    attributes:
+      label: Download source
+      placeholder: huggingface / modelscope / hf-mirror
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what did you get instead?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Traceback / console output
+      description: Paste the full error, including the ComfyUI console lines around it.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "ComfyUI 0.42.5 / torch 2.12.0+rocm7.14.0 / RX 9070 GRE / pymss 2.1.9"
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Minimal workflow or command
+      description: Drag the saved workflow JSON here, or paste the cli.py command.
+      render: json

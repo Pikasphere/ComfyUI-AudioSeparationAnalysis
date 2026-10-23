@@ -36,6 +36,8 @@ ASA Load Audio → ASA Separate (MSS) → ASA Stem Select("vocals") → ASA Shee
 
 Example workflow: [example_workflows/ASA 音频分离与扒谱.json](example_workflows/ASA%20音频分离与扒谱.json)
 
+![ASA example chain](docs/example-chain.svg)
+
 ## Install
 
 ```bash

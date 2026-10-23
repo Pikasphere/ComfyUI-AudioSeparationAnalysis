@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: pymss model catalog / downloads
+    url: https://pypi.org/project/pymss/
+    about: Model list, download sources and the MSS inference engine live upstream
+  - name: ComfyUI issues
+    url: https://github.com/comfyanonymous/ComfyUI/issues
+    about: Problems with ComfyUI itself, the queue or the frontend

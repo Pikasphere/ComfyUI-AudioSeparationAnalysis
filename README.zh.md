@@ -29,6 +29,8 @@ ASA Load Audio → ASA Separate (MSS) → ASA Stem Select("vocals") → ASA Shee
                      └→ stems ─→ SaveAudio ×N（存四轨/六轨 wav）
 ```
 
+![ASA 示例链路](docs/example-chain.svg)
+
 文件夹批处理不在节点里，用命令行（不占队列）：
 
 ```bash
